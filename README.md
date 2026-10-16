@@ -94,13 +94,13 @@ README 只讲「它是什么、怎么跑、读数是多少」。细节按主题�
 | 想知道 | 看 |
 |---|---|
 | 架构与设计取舍 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
-| 从零照着敲一遍 | [手动启动.md](手动启动.md) |
+| 从零照着敲一遍 | [docs/RUNBOOK.md](docs/RUNBOOK.md) |
 | 部署（Docker / 本机） | [docs/DEPLOY.md](docs/DEPLOY.md) |
 | 测试怎么跑、测什么 | [docs/TESTING.md](docs/TESTING.md) |
 | 评测方法论（终态 / pass^k / 消融） | [docs/EVAL.md](docs/EVAL.md) |
 | HTTP 接口 | [docs/API.md](docs/API.md) |
-| 接哪个模型、成本怎么算 | [接哪个模型跑.md](接哪个模型跑.md) |
-| 做过什么、你该做什么 | [交付总览.md](交付总览.md) |
+| 接哪个模型、成本怎么算 | [docs/ENDPOINTS.md](docs/ENDPOINTS.md) |
+| 做过什么、你该做什么 | [docs/OVERVIEW.md](docs/OVERVIEW.md) |
 
 ---
 

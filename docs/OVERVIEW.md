@@ -13,13 +13,13 @@
 | 文档 | 什么时候看 | 规模 |
 |---|---|---|
 | **双击「启动.bat」** | **完全不想碰命令行** —— 弹菜单，选数字，自动打开网页控制台 | — |
-| [手动启动.md](手动启动.md) | **想自己动手跑起来** —— 从 `python --version` 开始逐步照敲，含期望输出与故障排查 | 574 行 |
-| **交付总览.md**（本文） | 想先搞清楚「这是个什么东西、能不能信」 | 本文件 |
+| [docs/RUNBOOK.md](docs/RUNBOOK.md) | **想自己动手跑起来** —— 从 `python --version` 开始逐步照敲，含期望输出与故障排查 | 574 行 |
+| **docs/OVERVIEW.md**（本文） | 想先搞清楚「这是个什么东西、能不能信」 | 本文件 |
 | [README.md](README.md) | 想知道它是什么、怎么跑、读数是多少 | 113 行 |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 要深挖某处设计取舍 | 191 行 |
 | [docs/DEFECTS.md](docs/DEFECTS.md) | 要看 35 个缺陷的完整取证链 | 2,048 行 |
-| [接哪个模型跑.md](接哪个模型跑.md) | 要换模型端点 —— 五条接入路径 + 成本预算 | 298 行 |
-| [数据集跑批结果汇总.md](数据集跑批结果汇总.md) | 要看千级跑批的过程与结果 | — |
+| [docs/ENDPOINTS.md](docs/ENDPOINTS.md) | 要换模型端点 —— 五条接入路径 + 成本预算 | 298 行 |
+| [docs/BENCHMARKS.md](docs/BENCHMARKS.md) | 要看千级跑批的过程与结果 | — |
 
 ★ 最省事的一条路：**双击项目根目录的 `启动.bat`** → 输入 `1`（首次体验，约 10 秒、不要 Key）
 → 再输入 `6`（起服务）→ 浏览器自动打开控制台，点一张工单就能看它实时处置。
@@ -118,7 +118,7 @@ ticket-agent serve --seed 60
 # 浏览器打开 http://127.0.0.1:8000/ ，点左边任意一张工单，按「▶ 处置该工单」
 ```
 
-不需要 API key，不需要 GPU。手动版说明在 [手动启动.md](手动启动.md)。
+不需要 API key，不需要 GPU。手动版说明在 [docs/RUNBOOK.md](docs/RUNBOOK.md)。
 
 ### 3.2 如果你想要真实模型读数
 
@@ -229,6 +229,6 @@ ticket-agent eval --size 40 --k 3 --arms single,multi --kind llm --seed 11 --cus
 | HTTP 接口 | [docs/API.md](docs/API.md) |
 | 端点与模型 | [docs/SETUP.md](docs/SETUP.md) |
 | 部署 | [docs/DEPLOY.md](docs/DEPLOY.md) |
-| 手动启动 | [手动启动.md](手动启动.md) |
-| 数据集跑批 | [数据集跑批结果汇总.md](数据集跑批结果汇总.md) |
+| 手动启动 | [docs/RUNBOOK.md](docs/RUNBOOK.md) |
+| 数据集跑批 | [docs/BENCHMARKS.md](docs/BENCHMARKS.md) |
 | License | MIT |

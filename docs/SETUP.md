@@ -2,7 +2,7 @@
 
 > 想直接跑起来（不需要 API key）看 [README §30 秒跑起来](../README.md#30-秒跑起来)。
 > 部署方式看 [docs/DEPLOY.md](DEPLOY.md)。
-> 七个档案的完整价格表与「值不值得跑」在仓库根的 [接哪个模型跑.md](../接哪个模型跑.md)。
+> 七个档案的完整价格表与「值不值得跑」在仓库根的 [docs/ENDPOINTS.md](ENDPOINTS.md)。
 
 ## 1. 接真 LLM
 

@@ -76,9 +76,10 @@ DOCS: dict[str, int] = {
     "docs/API.md": 45,
     "docs/SETUP.md": 100,
     "docs/DEPLOY.md": 115,
-    "交付总览.md": 200,        # 交接说明，重写后 235 行
-    "手动启动.md": 200,
-    "接哪个模型跑.md": 100,
+    "docs/OVERVIEW.md": 200,     # 交接说明（原 交付总览.md，已移入 docs/）
+    "docs/RUNBOOK.md": 150,      # 手动启动（原 手动启动.md）
+    "docs/ENDPOINTS.md": 80,     # 接哪个模型跑（原 接哪个模型跑.md）
+    "docs/BENCHMARKS.md": 60,    # 跑批结果汇总（原 数据集跑批结果汇总.md）
     "web/index.html": 300,   # 控制台：单文件前端，压平了同样看不出来
     "diagnostics/README.md": 30,   # 一次性排查脚本的目录说明：短，但同样怕被压平
 }
