@@ -68,7 +68,7 @@ DEFECT_SECTION_TITLE = f"# {_cn_num(EXPECTED_DEFECTS)}个真实缺陷"
 #     "断言检查的文件已经不是承载那个内容的文件了"（缺陷 ⑧ 的镜像）。
 #     现在下限按重写后的实际行数下浮一档设，并留了 20% 余量。
 DOCS: dict[str, int] = {
-    "README.md": 80,          # 拆分后是导航版：是什么 + 30 秒跑起来 + 读数 + 文档表
+    "README.md": 180,         # 导航版但该有的都在：是什么/架构/评测/读数/缺陷精选/不足/目录
     "docs/DEFECTS.md": 1500,  # 35 个缺陷的完整取证链，本项目最值钱的部分
     "docs/ARCHITECTURE.md": 150,
     "docs/EVAL.md": 120,
