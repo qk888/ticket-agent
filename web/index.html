@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>售后工单处置 Agent · 控制台</title>
+<!-- 内联图标：省一个 /favicon.ico 404。用 SVG data URI 而不是加一条路由，
+     因为"控制台少个图标"不值得在服务端多一个端点。 -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23123a31'/%3E%3Cpath d='M9 21.5V10.5h3.2l3.3 6.2 3.3-6.2H22v11h-2.5v-6.6l-2.6 5h-1.8l-2.6-5v6.6z' fill='%23fff'/%3E%3C/svg%3E">
+<!--
+  为什么是单文件、没有构建步骤：
+  这个项目的主线是"Agent 能不能在生产里用"，不是"前端工程化"。
+  引入 Vue/React + Vite 会让面试官多问一层与主题无关的东西，
+  也会让"clone 下来就能跑"变成"先 npm install 五分钟"。
+  所以：一个 HTML、零依赖、由 FastAPI 同源挂出，双击服务就能看。
+
+  ★ 唯一有技术含量的地方在 SSE：后端是 `POST /runs/stream`，
+    而浏览器原生 EventSource **只支持 GET**。所以这里用 fetch +
+    ReadableStream 手写帧解析（见 parseSSE）。这是真会踩的坑，
+    不是"随便调个接口"。
+-->
+<style>
+  :root{
+    --bg:#f6f7f6; --panel:#fff; --line:#e2e6e3; --line-strong:#cfd6d1;
+    --ink:#1b2320; --ink-2:#4a5650; --ink-3:#7d8a84;
+    --brand:#123a31; --brand-soft:#e8f0ed;
+    --hot:#b04a26; --hot-soft:#fbeee8;
+    --ok:#1f7a4d; --ok-soft:#e6f4ec;
+    --warn:#9a6a00; --warn-soft:#fdf3dc;
+    --bad:#a52a2a; --bad-soft:#fbeaea;
+    --radius:8px; --mono:ui-monospace,Consolas,"Cascadia Mono",monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font:14px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+  }
+  button,input,select,textarea{font:inherit;color:inherit}
+
+  /* ── 顶栏 ───────────────────────────────────────── */
+  header{
+    display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+    padding:10px 16px; background:var(--brand); color:#fff;
+    position:sticky; top:0; z-index:20;
+  }
+  header h1{font-size:15px;margin:0;font-weight:650;letter-spacing:.3px}
+  header .sub{font-size:12px;opacity:.72;margin-left:2px}
+  header .spacer{flex:1}
+  .field{display:flex;align-items:center;gap:6px;font-size:12px}
+  .field label{opacity:.8}
+  header input,header select{
+    background:rgba(255,255,255,.13); border:1px solid rgba(255,255,255,.25);
+    color:#fff; border-radius:5px; padding:4px 8px; font-size:12px;
+  }
+  header input{width:104px}
+  header select option{color:#1b2320}
+  #conn{font-size:12px;padding:3px 9px;border-radius:99px;background:rgba(255,255,255,.15)}
+  #conn.ok{background:#2f8f5f} #conn.bad{background:#a52a2a}
+
+  /* ── 布局 ───────────────────────────────────────── */
+  main{display:grid;grid-template-columns:290px 1fr;gap:12px;padding:12px;align-items:start}
+  @media(max-width:900px){main{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius)}
+  .card > h2{
+    margin:0;padding:9px 12px;font-size:12.5px;font-weight:650;color:var(--ink-2);
+    border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;
+    text-transform:uppercase;letter-spacing:.5px;
+  }
+  .card > h2 .count{
+    margin-left:auto;font-size:11px;font-weight:600;color:var(--ink-3);
+    background:var(--bg);border-radius:99px;padding:1px 8px;text-transform:none;
+  }
+  .card .body{padding:10px 12px}
+  .stack{display:flex;flex-direction:column;gap:12px}
+
+  /* ── 工单列表 ───────────────────────────────────── */
+  .list{max-height:330px;overflow:auto}
+  .row{
+    padding:8px 12px;border-bottom:1px solid var(--line);cursor:pointer;
+    display:flex;flex-direction:column;gap:2px;
+  }
+  .row:last-child{border-bottom:0}
+  .row:hover{background:var(--brand-soft)}
+  .row.sel{background:var(--brand-soft);box-shadow:inset 3px 0 0 var(--brand)}
+  .row .t{font-weight:600;font-size:13px;display:flex;gap:6px;align-items:baseline}
+  .row .t .id{font-family:var(--mono);color:var(--ink-3);font-size:11.5px}
+  .row .m{font-size:11.5px;color:var(--ink-3);display:flex;gap:8px;flex-wrap:wrap}
+
+  .pill{
+    display:inline-block;font-size:10.5px;font-weight:650;padding:1.5px 7px;
+    border-radius:99px;letter-spacing:.2px;white-space:nowrap;
+  }
+  .p-open{background:var(--warn-soft);color:var(--warn)}
+  .p-pending_human{background:var(--hot-soft);color:var(--hot)}
+  .p-resolved{background:var(--ok-soft);color:var(--ok)}
+  .p-rejected,.p-closed{background:#eceeed;color:var(--ink-3)}
+  .p-awaiting_human{background:var(--hot-soft);color:var(--hot)}
+  .p-finished{background:var(--ok-soft);color:var(--ok)}
+  .p-failed{background:var(--bad-soft);color:var(--bad)}
+  .p-running{background:var(--brand-soft);color:var(--brand)}
+  .p-gray{background:#eceeed;color:var(--ink-3)}
+
+  /* ── 按钮 ───────────────────────────────────────── */
+  .btn{
+    border:1px solid var(--line-strong);background:#fff;border-radius:6px;
+    padding:6px 13px;cursor:pointer;font-size:13px;font-weight:560;
+  }
+  .btn:hover{background:var(--bg)}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .btn.primary{background:var(--brand);border-color:var(--brand);color:#fff}
+  .btn.primary:hover{filter:brightness(1.15)}
+  .btn.hot{background:var(--hot);border-color:var(--hot);color:#fff}
+  .btn.hot:hover{filter:brightness(1.1)}
+  .btn.sm{padding:3px 9px;font-size:12px}
+  .bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+
+  /* ── 轨迹时间线 ─────────────────────────────────── */
+  #trace{max-height:520px;overflow:auto;padding:10px 12px}
+  .empty{color:var(--ink-3);font-size:13px;text-align:center;padding:26px 12px;line-height:1.9}
+  .node{border-left:2px solid var(--line-strong);padding:0 0 10px 12px;margin-left:3px;position:relative}
+  .node:last-child{padding-bottom:0}
+  .node::before{
+    content:"";position:absolute;left:-5px;top:6px;width:7px;height:7px;
+    border-radius:50%;background:var(--line-strong);
+  }
+  .node.run::before{background:var(--brand)}
+  .node.triage::before{background:#3a6ea5}
+  .node.resolver::before{background:var(--hot)}
+  .node.verifier::before{background:var(--ok)}
+  .node-h{font-size:12.5px;font-weight:680;display:flex;gap:8px;align-items:baseline}
+  .node-h .en{font-family:var(--mono);font-size:11px;color:var(--ink-3);font-weight:400}
+  .note{font-size:12.5px;color:var(--ink-2);margin-top:3px;white-space:pre-wrap;word-break:break-word}
+
+  .call{
+    font-family:var(--mono);font-size:11.5px;background:var(--bg);
+    border:1px solid var(--line);border-radius:5px;padding:4px 8px;
+    margin-top:4px;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;
+  }
+  .call .nm{font-weight:700;color:var(--brand)}
+  .call .ar{color:var(--ink-3);flex:1;word-break:break-all}
+  .call .ms{color:var(--ink-3);font-size:10.5px}
+  .call.err{border-color:#e5bcbc;background:var(--bad-soft)}
+  .call.err .nm{color:var(--bad)}
+
+  .note-bad{
+    background:var(--bad-soft);border:1px solid #e5bcbc;border-radius:5px;
+    padding:5px 9px;margin-top:5px;font-size:12px;color:var(--bad);font-weight:560;
+  }
+
+  /* ── 详情 / 快照 ────────────────────────────────── */
+  .kv{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:12.5px}
+  .kv dt{color:var(--ink-3)} .kv dd{margin:0;font-weight:550}
+  .sec-t{font-size:11.5px;font-weight:680;color:var(--ink-3);margin:11px 0 5px;
+    text-transform:uppercase;letter-spacing:.5px}
+  .sec-t:first-child{margin-top:0}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th{text-align:left;color:var(--ink-3);font-weight:600;padding:4px 8px 4px 0;
+    border-bottom:1px solid var(--line);font-size:11px}
+  td{padding:4px 8px 4px 0;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:11.5px}
+  tr:last-child td{border-bottom:0}
+  .body-txt{
+    background:var(--bg);border:1px solid var(--line);border-radius:5px;
+    padding:8px 10px;font-size:12.5px;color:var(--ink-2);white-space:pre-wrap;line-height:1.7;
+  }
+
+  /* ── 人工审批 ───────────────────────────────────── */
+  .approve{background:var(--hot-soft);border:1px solid #eccdbc;border-radius:var(--radius);padding:11px 12px;margin-top:10px}
+  .approve h3{margin:0 0 7px;font-size:13px;color:var(--hot);font-weight:680}
+  .approve .row2{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:7px}
+  .approve input[type=number]{width:96px}
+  .approve input[type=text]{flex:1;min-width:150px}
+  .approve input[type=text],.approve input[type=number]{
+    border:1px solid var(--line-strong);border-radius:5px;padding:5px 8px;font-size:12.5px;background:#fff;
+  }
+  .cb{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--ink-2)}
+  .result{margin-top:8px;font-size:12.5px;border-radius:5px;padding:7px 10px;white-space:pre-wrap;word-break:break-word}
+  .result.ok{background:var(--ok-soft);color:var(--ok);border:1px solid #b9ddc8}
+  .result.bad{background:var(--bad-soft);color:var(--bad);border:1px solid #e5bcbc}
+
+  .final{
+    border:1px solid var(--line-strong);border-radius:var(--radius);
+    padding:10px 12px;margin-top:8px;background:#fcfdfc;
+  }
+  .final h3{margin:0 0 7px;font-size:13px;font-weight:680;display:flex;gap:8px;align-items:center}
+  .hint{font-size:11.5px;color:var(--ink-3);margin-top:5px;line-height:1.7}
+  code{font-family:var(--mono);font-size:11.5px;background:var(--bg);padding:1px 5px;border-radius:3px}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>售后工单处置 Agent</h1>
+  <span class="sub">控制台</span>
+  <span class="spacer"></span>
+  <div class="field">
+    <label>租户 Token</label>
+    <input id="token" value="tok-acme" spellcheck="false">
+  </div>
+  <div class="field">
+    <label>模型</label>
+    <select id="kind">
+      <option value="scripted">scripted（离线规则）</option>
+      <option value="llm">llm（真实模型）</option>
+      <option value="flaky">flaky（故障注入）</option>
+      <option value="overprivileged">overprivileged（越权）</option>
+      <option value="guesser">guesser（瞎猜订单）</option>
+      <option value="lenient">lenient（违规放行）</option>
+      <option value="noncompliant">noncompliant（抗命）</option>
+      <option value="lucky">lucky（跳过核查）</option>
+    </select>
+  </div>
+  <button class="btn sm" id="btn-connect">连接</button>
+  <span id="conn">未连接</span>
+</header>
+
+<main>
+  <!-- 左栏 -->
+  <div class="stack">
+    <section class="card">
+      <h2>待人工裁决 <span class="count" id="c-pending">0</span></h2>
+      <div id="pending" class="list" style="max-height:200px"></div>
+    </section>
+
+    <section class="card">
+      <h2>工单 <span class="count" id="c-tickets">0</span></h2>
+      <div id="tickets" class="list"></div>
+    </section>
+
+    <section class="card">
+      <h2>运行记录 <span class="count" id="c-runs">0</span></h2>
+      <div id="runs" class="list" style="max-height:170px"></div>
+    </section>
+  </div>
+
+  <!-- 右栏 -->
+  <div class="stack">
+    <section class="card">
+      <h2>处置轨迹 <span class="count" id="c-trace">待运行</span></h2>
+      <div class="bar" style="padding:10px 12px 0">
+        <button class="btn primary" id="btn-run" disabled>▶ 处置该工单</button>
+        <select id="arm" style="border:1px solid var(--line-strong);border-radius:6px;padding:6px 9px;font-size:13px">
+          <option value="multi">多智能体（triage→resolver→verifier）</option>
+          <option value="single">单智能体</option>
+        </select>
+        <span class="hint" id="run-hint">先在左边选一张工单</span>
+      </div>
+      <div id="trace">
+        <div class="empty">
+          还没跑。<br>
+          在左边点一张工单，再点「处置该工单」。<br>
+          <span style="font-size:12px">轨迹里会实时打出 Agent 查了什么、判了什么、做了什么。</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="card" id="detail-card">
+      <h2>工单详情</h2>
+      <div class="body" id="detail">
+        <div class="empty" style="padding:14px">未选中工单</div>
+      </div>
+    </section>
+  </div>
+</main>
+
+<script>
+"use strict";
+
+// ══════════════════════════════════════════════════════════════
+// 状态
+// ══════════════════════════════════════════════════════════════
+
+const S = {
+  selected: null,     // {ticket_id, subject, ...}
+  detail: null,       // /tickets/{id} 的返回
+  running: false,
+  // 审批结果要存在状态里，不能只写进 DOM：审批成功后工单不再是
+  // pending_human，renderApprove() 会整体重渲染（甚至提前 return），
+  // 直接塞 DOM 的提示会被自己擦掉 —— 用户只看到"点了一下，什么都没发生"。
+  apResult: null,     // {html, ticketId}
+};
+
+const $ = (id) => document.getElementById(id);
+const tok = () => $("token").value.trim();
+
+/** 加鉴权头的 fetch。401 会被上层统一提示。 */
+async function api(path, opts = {}) {
+  const res = await fetch(path, {
+    ...opts,
+    headers: {
+      "Authorization": "Bearer " + tok(),
+      "Content-Type": "application/json",
+      ...(opts.headers || {}),
+    },
+  });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try { detail = (await res.json()).detail || detail; } catch (e) {}
+    const err = new Error(detail);
+    err.status = res.status;
+    throw err;
+  }
+  return res.json();
+}
+
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function setConn(text, cls) {
+  const el = $("conn");
+  el.textContent = text;
+  el.className = cls || "";
+}
+
+function pill(text) {
+  const cls = "p-" + String(text).replace(/[^a-z_]/gi, "");
+  return `<span class="pill ${cls}">${esc(text)}</span>`;
+}
+
+const STATUS_CN = {
+  open: "待处理", pending_human: "转人工", resolved: "已解决", rejected: "已驳回",
+  closed: "已关闭", running: "运行中", finished: "已完成",
+  awaiting_human: "等人工", failed: "失败",
+};
+
+// ══════════════════════════════════════════════════════════════
+// SSE：后端是 POST /runs/stream，原生 EventSource 只支持 GET
+// ══════════════════════════════════════════════════════════════
+
+/**
+ * 手写 SSE 帧解析。
+ *
+ * 帧格式（见 api/app.py 的 _sse）：
+ *     event: <type>\n
+ *     data: <json>\n
+ *     \n            ← 空行结帧，少了它 onmessage 永远不触发
+ *
+ * 关键点：网络分片不保证按帧边界到达，一个 chunk 可能是半帧、
+ * 也可能是三帧半。所以必须**缓冲 + 按 \n\n 切**，不能一行一行读。
+ */
+async function* parseSSE(response) {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder("utf-8");
+  let buf = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+
+    let idx;
+    while ((idx = buf.indexOf("\n\n")) >= 0) {
+      const frame = buf.slice(0, idx);
+      buf = buf.slice(idx + 2);
+
+      let data = "";
+      for (const line of frame.split("\n")) {
+        if (line.startsWith("data:")) data += line.slice(5).trim();
+      }
+      if (!data) continue;
+      try { yield JSON.parse(data); } catch (e) { /* 半帧或空帧，跳过 */ }
+    }
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// 连接 / 元信息
+// ══════════════════════════════════════════════════════════════
+
+async function connect() {
+  setConn("连接中…", "");
+  try {
+    // /health 不需要鉴权 —— 先确认服务活着，再看 token 对不对
+    const h = await (await fetch("/health")).json();
+    $("kind").value = h.model_kind || "scripted";
+    const meta = await api("/meta");
+    setConn(`已连接 · ${h.model_kind}`, "ok");
+    renderMeta(meta);
+    await refreshAll();
+  } catch (e) {
+    setConn(e.status === 401 ? "Token 无效" : "连不上", "bad");
+    $("trace").innerHTML =
+      `<div class="empty">连不上服务。<br><span style="font-size:12px">` +
+      `先在项目目录跑 <code>python demo_menu.py 6</code> 起服务，或用 ` +
+      `<code>python -m ticket_agent.cli serve</code>。</span></div>`;
+    if (e.status === 401) {
+      $("trace").innerHTML =
+        `<div class="empty">Token 无效。<br><span style="font-size:12px">` +
+        `默认可用 <code>tok-acme</code>（租户 acme）或 <code>tok-globex</code>。</span></div>`;
+    }
+  }
+}
+
+function renderMeta(meta) {
+  // 角色工具矩阵 —— 这张表本身就是"物理权限裁剪"的证据
+  const roles = Object.entries(meta.roles || {});
+  if (!roles.length) return;
+  $("detail").innerHTML = `
+    <div class="sec-t">当前配置</div>
+    <dl class="kv">
+      <dt>模型种类</dt><dd>${esc(meta.model_kind)}</dd>
+      <dt>模型名</dt><dd>${esc(meta.model_name || "—")}</dd>
+      <dt>退款转人工阈值</dt><dd>¥${esc(meta.thresholds?.refund_hitl_threshold_cny)}</dd>
+      <dt>退货窗口</dt><dd>${esc(meta.thresholds?.return_window_days)} 天</dd>
+      <dt>单订单退款上限</dt><dd>${esc(meta.thresholds?.max_refunds_per_order)} 次</dd>
+    </dl>
+    <div class="sec-t">角色工具矩阵（越权在工具层被拒绝，不是靠提示词）</div>
+    <table>
+      <tr><th>角色</th><th>可调用的工具</th></tr>
+      ${roles.map(([r, ns]) => {
+        const isWrite = new Set(meta.write_tools || []);
+        return `<tr><td>${esc(r)}</td><td>${
+          ns.map((n) => isWrite.has(n)
+            ? `<span style="color:var(--hot);font-weight:700">${esc(n)}</span>`
+            : esc(n)).join(", ")
+        }</td></tr>`;
+      }).join("")}
+    </table>
+    <div class="hint">红色是写工具。triage 与 verifier 一个都没有 —— 它们连调用的资格都不存在。</div>`;
+}
+
+// ══════════════════════════════════════════════════════════════
+// 列表
+// ══════════════════════════════════════════════════════════════
+
+async function refreshAll() {
+  await Promise.all([loadTickets(), loadPending(), loadRuns()]);
+}
+
+async function loadTickets() {
+  const list = await api("/tickets?limit=60");
+  $("c-tickets").textContent = list.length;
+  $("tickets").innerHTML = list.length ? list.map((t) => `
+    <div class="row ${S.selected?.ticket_id === t.ticket_id ? "sel" : ""}"
+         data-id="${t.ticket_id}">
+      <div class="t"><span class="id">#${t.ticket_id}</span>${esc(t.subject || "")}</div>
+      <div class="m">
+        ${pill(t.status)}
+        <span>优先级 ${esc(t.priority)}</span>
+        <span>订单定位：${esc(t.order_basis)}</span>
+      </div>
+    </div>`).join("")
+    : `<div class="empty" style="padding:16px">没有工单。<br><span style="font-size:12px">先跑 <code>demo_menu.py</code> 的 [1]</span></div>`;
+
+  $("tickets").querySelectorAll(".row").forEach((el) => {
+    el.onclick = () => selectTicket(Number(el.dataset.id));
+  });
+}
+
+async function loadPending() {
+  const list = await api("/pending");
+  $("c-pending").textContent = list.length;
+  $("pending").innerHTML = list.length ? list.map((t) => `
+    <div class="row" data-id="${t.ticket_id}">
+      <div class="t"><span class="id">#${t.ticket_id}</span>${esc(t.subject || "")}</div>
+      <div class="m">
+        ${t.amount != null ? `<span>¥${esc(t.amount)}</span>` : ""}
+        ${t.order_no ? `<span>${esc(t.order_no)}</span>` : ""}
+      </div>
+    </div>`).join("")
+    : `<div class="empty" style="padding:14px;font-size:12.5px">队列空</div>`;
+
+  $("pending").querySelectorAll(".row").forEach((el) => {
+    el.onclick = () => selectTicket(Number(el.dataset.id));
+  });
+}
+
+async function loadRuns() {
+  const list = await api("/runs?limit=40");
+  $("c-runs").textContent = list.length;
+  $("runs").innerHTML = list.length ? list.map((r) => `
+    <div class="row" data-id="${r.ticket_id}">
+      <div class="t"><span class="id">${esc(r.run_id)}</span>#${r.ticket_id}</div>
+      <div class="m">${pill(r.status)}<span>${esc(r.arm)}</span></div>
+    </div>`).join("")
+    : `<div class="empty" style="padding:14px;font-size:12.5px">还没跑过</div>`;
+
+  $("runs").querySelectorAll(".row").forEach((el) => {
+    el.onclick = () => selectTicket(Number(el.dataset.id));
+  });
+}
+
+// ══════════════════════════════════════════════════════════════
+// 工单详情
+// ══════════════════════════════════════════════════════════════
+
+async function selectTicket(id) {
+  S.selected = { ticket_id: id };
+  $("btn-run").disabled = false;
+  $("run-hint").textContent = `已选工单 #${id}`;
+  await loadTickets();
+  try {
+    S.detail = await api(`/tickets/${id}`);
+    renderDetail();
+  } catch (e) {
+    $("detail").innerHTML = `<div class="result bad">读取失败：${esc(e.message)}</div>`;
+  }
+}
+
+function renderDetail() {
+  const d = S.detail;
+  if (!d) return;
+  const t = d.ticket || {}, o = d.order || {}, c = d.customer || {}, snap = d.snapshot || {};
+  const refunds = snap.refunds || [];
+
+  $("detail").innerHTML = `
+    <div class="sec-t">工单 #${esc(t.ticket_id)}</div>
+    <dl class="kv">
+      <dt>主题</dt><dd>${esc(t.subject)}</dd>
+      <dt>状态</dt><dd>${pill(t.status)} <span style="color:var(--ink-3);font-weight:400">意图 ${esc(t.intent)}</span></dd>
+      <dt>优先级</dt><dd>${esc(t.priority)}</dd>
+      <dt>订单定位</dt><dd>${esc(d.order_basis)}</dd>
+    </dl>
+    ${t.body ? `<div class="sec-t">客户来信</div><div class="body-txt">${esc(t.body)}</div>` : ""}
+
+    ${o.order_id ? `
+      <div class="sec-t">订单</div>
+      <dl class="kv">
+        <dt>订单号</dt><dd>${esc(o.order_no)}</dd>
+        <dt>金额</dt><dd>¥${esc(o.amount)}</dd>
+        <dt>商品类目</dt><dd>${esc(o.category)}</dd>
+        <dt>订单状态</dt><dd>${esc(o.status)}</dd>
+        <dt>已退款次数</dt><dd>${esc(o.refund_count)}</dd>
+        <dt>签收时间</dt><dd>${esc(o.signed_at || "未签收")}</dd>
+      </dl>` : `<div class="sec-t">订单</div><div class="hint">该工单未关联到唯一定单（order_basis=${esc(d.order_basis)}）</div>`}
+
+    ${c.customer_id ? `
+      <div class="sec-t">客户</div>
+      <dl class="kv">
+        <dt>姓名</dt><dd>${esc(c.name)}</dd>
+        <dt>风险分</dt><dd>${esc(c.risk_score)}</dd>
+        <dt>黑名单</dt><dd>${c.is_blacklisted ? "是" : "否"}</dd>
+        <dt>投诉次数</dt><dd>${esc(c.complaint_count)}</dd>
+      </dl>` : ""}
+
+    <div class="sec-t">当前快照（终态判定的依据）</div>
+    <table>
+      <tr><th>ticket.status</th><th>order.status</th><th>refund_count</th><th>退款单</th></tr>
+      <tr>
+        <td>${esc(snap.ticket?.status)}</td>
+        <td>${esc(snap.order?.status ?? "—")}</td>
+        <td>${esc(snap.order?.refund_count ?? "—")}</td>
+        <td>${refunds.length
+          ? refunds.map((r) => `${esc(r.status)}/¥${esc(r.amount)}`).join("、")
+          : "无"}</td>
+      </tr>
+    </table>
+    <div class="hint">
+      评测就是比这张表：<code>ticket.status</code> 与 <code>order.refund_count</code>、
+      退款单集合，必须与期望终态完全一致。过程怎么走的**不参与判定** ——
+      这正是 τ-bench 的做法，也是为什么"看起来办成了"骗不过它。
+    </div>
+
+    <div id="approve-slot"></div>
+    <div id="ap-result"></div>`;
+
+  renderApprove();
+}
+
+// ══════════════════════════════════════════════════════════════
+// 人工审批（HITL）—— 项目的核心卖点之一
+// ══════════════════════════════════════════════════════════════
+
+function renderApprove() {
+  const d = S.detail;
+  const slot = $("approve-slot");
+  if (!d) return;
+
+  // 结果框独立于审批面板：面板会因工单状态变化而消失，结果不能跟着消失。
+  const paint = () => {
+    const box = $("ap-result");
+    if (!box) return;
+    const r = S.apResult;
+    box.innerHTML = r && r.ticketId === d.ticket?.ticket_id ? r.html : "";
+  };
+
+  if (d.ticket?.status !== "pending_human") { paint(); return; }
+
+  const amt = d.order?.amount;
+  slot.innerHTML = `
+    <div class="approve">
+      <h3>⚠ 这笔动作等你拍板</h3>
+      <div class="hint" style="margin:0 0 8px">
+        高风险动作（金额超阈值 / 已退过款 / 生鲜类）不会自动执行。
+        Agent 已经停在这里，等一个"人"。
+      </div>
+      <div class="row2">
+        <input type="number" id="ap-amount" step="0.01" min="0"
+               value="${amt != null ? esc(amt) : ""}" placeholder="退款金额">
+        <input type="text" id="ap-note" placeholder="备注（会进审计日志）">
+      </div>
+      <div class="row2">
+        <button class="btn primary sm" data-dec="approve_refund">批准退款</button>
+        <button class="btn sm" data-dec="reject">驳回诉求</button>
+        <button class="btn sm" data-dec="keep_pending">维持挂起</button>
+        <label class="cb">
+          <input type="checkbox" id="ap-override">
+          强制破例（override，会记 audit）
+        </label>
+      </div>
+      <div class="hint" style="margin:0">
+        ★ 试试在"批准退款"不勾 override：如果政策结论是「不该退」，服务会返回
+        <code>409</code> 并拒绝 —— 人工审批也绕不过政策。
+        这不是提示词约定，是写路径上的硬校验。
+      </div>
+    </div>`;
+
+  slot.querySelectorAll("[data-dec]").forEach((b) => {
+    b.onclick = () => doApprove(b.dataset.dec);
+  });
+  paint();
+}
+
+async function doApprove(decision) {
+  const id = S.selected.ticket_id;
+  const show = (html) => {
+    S.apResult = { html, ticketId: id };
+    const box = $("ap-result");
+    if (box) box.innerHTML = html;
+  };
+  const raw = $("ap-amount").value.trim();
+  const body = {
+    decision,
+    note: $("ap-note").value.trim(),
+    amount: raw === "" ? null : Number(raw),
+    override: $("ap-override").checked,
+  };
+
+  show(`<div class="result">提交中…</div>`);
+  try {
+    const out = await api(`/tickets/${id}/approve`, {
+      method: "POST", body: JSON.stringify(body),
+    });
+    show(`<div class="result ok">✓ 裁决完成：${esc(out.decision)}` +
+      (out.policy_override ? `（<b>已破例</b>，审计里有 policy_override 记录）` : "") +
+      `\n实际执行：${(out.performed || []).map((p) => esc(p.action)).join("、") || "无"}</div>`);
+    await refreshAll();
+    await selectTicket(id);
+  } catch (e) {
+    const isPolicy = e.status === 409;
+    show(`<div class="result bad">` +
+      (isPolicy ? `⛔ 政策拒绝（HTTP 409）\n` : `✗ 失败（HTTP ${e.status || "?"}）\n`) +
+      `${esc(e.message)}` +
+      (isPolicy ? `\n\n<span style="font-weight:400">这是正确行为 —— 护栏生效了。</span>` : "") +
+      `</div>`);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// 跑工单（SSE 实时轨迹）
+// ══════════════════════════════════════════════════════════════
+
+async function runTicket() {
+  if (S.running || !S.selected) return;
+  S.running = true;
+  $("btn-run").disabled = true;
+  $("btn-run").textContent = "运行中…";
+  $("c-trace").textContent = "运行中";
+  $("trace").innerHTML = "";
+
+  const arm = $("arm").value;
+  const id = S.selected.ticket_id;
+  let t0 = performance.now();
+
+  const box = (html) => {
+    const d = document.createElement("div");
+    d.innerHTML = html;
+    $("trace").appendChild(d.firstElementChild);
+    $("trace").scrollTop = $("trace").scrollHeight;
+    return d.firstElementChild;
+  };
+
+  try {
+    const res = await fetch("/runs/stream", {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + tok(), "Content-Type": "application/json" },
+      body: JSON.stringify({ ticket_id: id, arm, user_input: "" }),
+    });
+
+    if (!res.ok) {
+      let detail = res.statusText;
+      try { detail = (await res.json()).detail || detail; } catch (e) {}
+      throw new Error(`HTTP ${res.status}: ${detail}`);
+    }
+
+    let curNode = null;   // 当前节点块
+    let sawFinal = false;
+
+    for await (const ev of parseSSE(res)) {
+      switch (ev.type) {
+        case "run_started":
+          box(`<div class="node run">
+                 <div class="node-h">开始处置 <span class="en">run ${esc(ev.run_id)} · ${esc(ev.arm)}</span></div>
+               </div>`);
+          break;
+
+        case "node_started":
+          curNode = box(`<div class="node ${esc(ev.node)}">
+                           <div class="node-h">${esc(ev.node)} <span class="en">处理中…</span></div>
+                         </div>`);
+          break;
+
+        case "tool_call": {
+          const host = curNode || $("trace");
+          const el = document.createElement("div");
+          el.className = "call" + (ev.ok === false ? " err" : "");
+          el.innerHTML =
+            `<span class="nm">${esc(ev.name)}</span>` +
+            `<span class="ar">${esc(JSON.stringify(ev.args ?? {}))}</span>` +
+            `<span class="ms">${ev.ok === false ? "✗ 被拒" : "✓"}${ev.ms != null ? ` ${esc(ev.ms)}ms` : ""}</span>`;
+          host.appendChild(el);
+          $("trace").scrollTop = $("trace").scrollHeight;
+          break;
+        }
+
+        case "node_finished": {
+          if (!curNode) break;
+          curNode.querySelector(".en").textContent = "完成";
+          if (ev.note) {
+            const n = document.createElement("div");
+            n.className = "note";
+            n.textContent = ev.note;
+            curNode.appendChild(n);
+          }
+          if (ev.forbidden_hits?.length) {
+            const b = document.createElement("div");
+            b.className = "note-bad";
+            b.textContent = "⚠ 过程违规：" + ev.forbidden_hits.join("、");
+            curNode.appendChild(b);
+          }
+          break;
+        }
+
+        case "final":
+          sawFinal = true;
+          renderFinal(ev, Math.round(performance.now() - t0));
+          break;
+
+        case "error":
+          box(`<div class="node"><div class="note-bad">✗ ${esc(ev.error)}</div></div>`);
+          break;
+
+        case "done":
+          break;
+      }
+    }
+
+    if (!sawFinal) box(`<div class="node"><div class="note">流结束但没有终态事件。</div></div>`);
+  } catch (e) {
+    box(`<div class="node"><div class="note-bad">✗ ${esc(e.message)}</div></div>`);
+  } finally {
+    S.running = false;
+    $("btn-run").disabled = false;
+    $("btn-run").textContent = "▶ 处置该工单";
+    $("c-trace").textContent = "已完成";
+    await refreshAll();
+    if (S.selected) { try { await selectTicket(S.selected.ticket_id); } catch (e) {} }
+  }
+}
+
+function renderFinal(ev, ms) {
+  const acts = ev.actions_taken || [];
+  const snap = ev.snapshot || {};
+  const verdict = ev.verdict || {};
+  const budget = ev.budget || {};
+  const forbidden = ev.forbidden_hits || [];
+
+  // actions_taken 里存的是工具调用的原文（含整段 resolution 文案）。
+  // 直接 JSON.stringify 会把终态卡撑成一屏乱码 —— 所以只取工具名 +
+  // 关键参数（金额/状态），完整参数留给上面的轨迹块。
+  const actText = (a) => {
+    if (typeof a === "string") return a;
+    const name = a.name || a.tool || a.action || "?";
+    const args = a.args || {};
+    const bits = [];
+    if (args.status) bits.push(args.status);
+    if (args.amount != null) bits.push("¥" + args.amount);
+    if (args.refund_id) bits.push("refund#" + args.refund_id);
+    return bits.length ? `${name}（${bits.join(" ")}）` : name;
+  };
+
+  const el = document.createElement("div");
+  el.className = "final";
+  el.innerHTML = `
+    <h3>${pill(ev.status)} <span style="font-weight:400;color:var(--ink-3);font-size:12px">
+      ${STATUS_CN[ev.status] || ""} · ${ms}ms · ${esc(ev.arm)}</span></h3>
+    <dl class="kv">
+      <dt>实际动作</dt><dd>${acts.length
+        ? acts.map((a) => esc(actText(a))).join("、")
+        : `<span style="color:var(--ink-3);font-weight:400">无（未写任何数据）</span>`}</dd>
+      <dt>终态快照</dt><dd>工单 <b>${esc(snap.ticket?.status ?? "—")}</b> ·
+        订单 ${esc(snap.order?.status ?? "—")} ·
+        退款次数 ${esc(snap.order?.refund_count ?? "—")} ·
+        退款单 ${(snap.refunds || []).length} 笔</dd>
+      ${verdict && Object.keys(verdict).length ? `<dt>复核结论</dt><dd>${esc(JSON.stringify(verdict))}</dd>` : ""}
+      ${budget && Object.keys(budget).length ? `<dt>预算</dt><dd>tokens ${esc(budget.tokens ?? "—")} · ¥${esc(budget.cost_cny ?? "—")}</dd>` : ""}
+    </dl>
+    ${forbidden.length
+      ? `<div class="note-bad">⚠ 过程违规 ${forbidden.length} 项：${forbidden.map(esc).join("、")}
+         <div style="font-weight:400;margin-top:3px">
+         终态可能"歪打正着"，但过程探针独立记账 —— 这正是只看结果会漏掉的东西。
+         </div></div>`
+      : `<div class="hint">✓ 过程探针未发现违规</div>`}
+    ${ev.requires_human_approval
+      ? `<div class="hint" style="color:var(--hot);font-weight:600">
+           ★ 该工单已转入人工队列。到左上「待人工裁决」里继续，或直接在本页详情里裁决。</div>`
+      : ""}
+    ${ev.error ? `<div class="note-bad">${esc(ev.error)}</div>` : ""}`;
+
+  $("trace").appendChild(el);
+  $("trace").scrollTop = $("trace").scrollHeight;
+}
+
+// ══════════════════════════════════════════════════════════════
+// 事件绑定
+// ══════════════════════════════════════════════════════════════
+
+$("btn-connect").onclick = connect;
+$("btn-run").onclick = runTicket;
+
+$("kind").onchange = async () => {
+  const kind = $("kind").value;
+  try {
+    await api("/admin/model-kind", { method: "POST", body: JSON.stringify({ kind }) });
+    setConn(`已连接 · ${kind}`, "ok");
+  } catch (e) {
+    setConn(`切换失败：${e.message}`, "bad");
+    $("kind").value = "scripted";
+  }
+};
+
+$("token").onchange = connect;
+
+connect();
+</script>
+</body>
+</html>

@@ -1,0 +1,78 @@
+# ── 机密：绝不提交 ────────────────────────────────────────────
+# .env 里放的是真实 API key 与本机 sidecar 的 bearer。
+# 仓库里只放 .env.example（值全部留空或注释掉）。
+.env
+.env.local
+.env.*.local
+
+# sidecar 的 discovery 文件：里面有本次启动随机生成的 bearer，且随进程生灭。
+# 它是运行时产物，不是源码。
+.workbuddy-sidecar.json
+
+# ── 数据与产物 ────────────────────────────────────────────────
+# 业务库、checkpoint、评测结果都在这里，由 seed/eval 生成。
+eval_out/
+*.db
+*.sqlite
+*.sqlite3
+
+# 语料（data/raw/*.jsonl）：体积大、可从上游重新下载，且各自带自己的许可。
+# 保留 data/ 的说明文件，但不提交语料本体。
+data/raw/*.jsonl
+data/raw/*.json
+data/raw/*.csv
+
+# ── 语料与探测产物 ──────────────────────────────────────────
+# 上面只忽略了 data/raw 的明文语料，但 data/probe/ 下有 ~459MB 探测产物
+# （各数据集 head/FULL 样本、GitHub/HF 目录树快照、zip、pdf、bin）。
+# 这些是「当时为了选数据集留下的取证」，不是项目运行所需：
+#   - samples/*_FULL.* 是几十 MB 的样本文件，上游都能重新下载；
+#   - gh_*_tree*.json / hf_*_detail*.json 是目录树快照，一次性取证；
+#   - *.zip / *.pdf / *.bin 与售后 Agent 主线无关（是另一个项目的遗留）。
+# 保留 REPORT.md 与 *.py（说明怎么探的、探到了什么），不保留产物本体。
+data/probe/samples/
+data/probe/samples_targz/
+data/probe/*.json
+data/raw/product_info/
+data/raw/user_guide/
+data/raw/*.zip
+data/raw/*.bin
+data/raw/*.bak
+
+# ── Python ───────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ── 临时探针脚本的产物 ────────────────────────────────────────
+# tools/ 下的 *.mjs 是源码（要提交）；它们的输出日志不是。
+tools/*.log
+tools/*.out
+*.tmp
+
+# ── 编辑器 / 系统 ─────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── 会话施工残留（不是项目文件）─────────────────────────────
+# `_b*.txt` / `_b*_plan.txt` 是当时写 #2 方案时导出的会话记录，
+# 内容是助手自己的思考草稿，不是交付物。
+_b3[0-9][0-9]*.txt
+_b[0-9][0-9][0-9]_*.txt
+# 构建镜像的完整日志（含 buildkit 步骤转储），对仓库读者没用。
+logs/*.log
+logs/*.out

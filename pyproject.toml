@@ -1,0 +1,79 @@
+[project]
+name = "ticket-agent"
+version = "0.1.0"
+description = "售后工单处置 Agent — LangGraph 编排 + τ-bench 式终态评测 + HITL 政策护栏"
+requires-python = ">=3.11"
+dependencies = [
+    # ── Agent 编排 ──
+    "langchain>=1.0,<2",
+    "langchain-core>=1.0,<2",
+    "langgraph>=1.0,<2",
+    "langchain-openai>=1.0,<2",
+
+    # ── 服务层 ──
+    # ★ SSE 是手写的（FastAPI StreamingResponse + media_type="text/event-stream"），
+    #   不依赖 sse-starlette —— 见 README §4.2 缺陷 ⑧。
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    # python-dotenv 由 pydantic-settings 传递依赖引入，但 config.py 显式用了
+    # `env_file=...` 读 .env，所以这里显式声明（不靠传递依赖的偶然性）。
+    "pydantic-settings>=2.6",
+    "python-dotenv>=1.0",
+
+    # ── 数据层 ──
+    # ★ 同步 SQLAlchemy：没有 async engine / AsyncSession，因此不依赖 aiosqlite。
+    "sqlalchemy>=2.0",
+
+    # ── 工具与运维 ──
+    "tenacity>=9.0",
+    "typer>=0.15",
+    "rich>=13.9",
+]
+
+[project.optional-dependencies]
+# 生产 checkpointer + 多租户持久化
+postgres = [
+    "langgraph-checkpoint-postgres>=2.0",
+    "psycopg[binary,pool]>=3.2",
+]
+# 知识库 RAG（本地向量检索，零外部依赖）
+rag = [
+    "numpy>=1.26",
+]
+# 对照实现
+agentscope = [
+    "agentscope>=2.0",
+]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.8",
+    "mypy>=1.13",
+]
+
+[project.scripts]
+ticket-agent = "ticket_agent.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ticket_agent"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true

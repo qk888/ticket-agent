@@ -1,0 +1,48 @@
+# ─────────────────────────────────────────────────────────────
+# 构建上下文瘦身
+#
+# 之前没有这个文件，代价是两件真事：
+#   1. data/ 语料 462MB + eval_out/ 68MB 整包塞给 daemon，
+#      每次 build 光传上下文就慢得离谱；
+#   2. .env（8899 字节，真实 LLM key）会被打进镜像层 ——
+#      镜像一旦推出去 key 就跟着出去了。
+# ─────────────────────────────────────────────────────────────
+
+# 秘密：绝不进镜像层
+.env
+.env.*
+*.key
+*.pem
+
+# 数据与运行产物（compose 里以卷挂载，本就不该 COPY 进镜像）
+data/
+eval_out/
+logs/
+*.db
+*.sqlite
+*.sqlite3
+
+# Python 缓存与虚拟环境
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# 根目录下的一次性排查脚本（155 个 _*.py，不属于源码）
+# 注意：leading slash 锚定在 context 根，不会误伤 src/ 下的模块
+/_*.py
+
+# 测试不属于运行镜像
+tests/
+
+# 版本控制 / 编辑器 / 文档（README.md 例外，Dockerfile 要 COPY 它）
+.git/
+.gitignore
+.vscode/
+.idea/
+*.md
+!README.md

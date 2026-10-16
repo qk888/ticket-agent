@@ -1,0 +1,60 @@
+name: ticket-agent
+
+services:
+  # ── 主服务：控制台 + API + Agent ──────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ticket-agent:0.1.0
+    container_name: ticket-agent
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      # ★ 三个卷各自解决一个真实事故：
+      #   eval_out —— 不挂卷的话容器一重建，1200 次评测运行全没；
+      #   data     —— 语料 100+MB，烧进镜像会让每次改代码都重传一遍；
+      #   logs     —— 落盘日志，容器炸了还能捞。
+      - ./eval_out:/app/eval_out
+      - ./data:/app/data:ro
+      - ./logs:/app/logs
+    environment:
+      - TZ=Asia/Shanghai
+      # 演示库和评测库分开，别互相洗（seed --drop 会整库重建）
+      - DATABASE_URL=sqlite:////app/eval_out/demo.db
+    # 演示：起服务就灌 60 个客户的数据
+    command: ["ticket-agent", "serve", "--host", "0.0.0.0", "--port", "8000", "--seed", "60"]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  # ── 可选：PostgreSQL checkpointer（生产路径）──────────
+  # 现在默认是 SQLite + MemorySaver，单容器演示够用。
+  # 要长任务恢复（HITL 审批跨进程/跨重启生效）才需要这个：
+  #   docker compose --profile postgres up -d
+  # 起来后把 .env 里 CHECKPOINTER=postgres 打开，服务重启不丢会话。
+  postgres:
+    image: postgres:16-alpine
+    container_name: ticket-agent-pg
+    restart: unless-stopped
+    profiles: ["postgres"]
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ticket
+      POSTGRES_PASSWORD: ticket
+      POSTGRES_DB: ticket_agent
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ticket -d ticket_agent"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
