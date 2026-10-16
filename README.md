@@ -1,5 +1,11 @@
 # ticket-agent · 售后工单处置 Agent
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
+[![Tests](https://img.shields.io/badge/tests-237%20passed-brightgreen.svg)](#7-评测方法论)
+[![Docker](https://img.shields.io/badge/docker-ready-blue.svg)](Docker部署.md)
+[![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://docs.astral.sh/ruff/)
+
 > 一个能经得起面试官追问 30 分钟的 Agent 项目：**LangGraph 编排 + 角色权限物理裁剪 + HITL 人工审批 + τ-bench 式终态评测**。
 > 评测不看 agent 说了什么，只看它做完之后**数据库状态对不对**；一致性用 `pass^k` 而不是单次成功率衡量。
 
@@ -4340,3 +4346,13 @@ A1 那 40 条只能得出「multi 净负 25 个点」这一句，因为它把 11
 - CRMArena — https://arxiv.org/abs/2411.02305
 - AI Agents That Matter — https://arxiv.org/abs/2407.01502
 - LangGraph — https://docs.langchain.com/oss/python/langgraph/overview
+
+---
+
+## License
+
+[MIT](LICENSE) © 2026 青凯 (qk888)
+
+> 数据说明：`data/raw/` 下的语料来自多个公开数据集，各自带自己的许可，**不随本仓库的 MIT 授权分发**。
+> 本仓库只提交语料的**构建脚本**与说明，不提交语料本体（见 `.gitignore`）。
+
