@@ -1,3 +1,10 @@
+# Docker 部署
+
+> **本文件已合并到 [docs/DEPLOY.md](docs/DEPLOY.md)，内容更全（加了镜像为什么这么做的理由、常见问题、和启动.bat 的取舍）。**
+> 这里保留原内容备查。
+
+---
+
 # Docker 部署 —— 麻烦程度：**不麻烦，一条命令**
 
 本机已确认可用：`Docker version 29.7.2`、`Docker Compose version v5.5.1`。
