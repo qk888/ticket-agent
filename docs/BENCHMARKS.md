@@ -12,7 +12,7 @@
 
 ## 二、先说最要紧的一件事：报表一度是被污染的，污染源不是 glob
 
-上一轮我以为污染来自 `_prun.py` 的 glob 吞掉上一代 shard2of2 残留（4 条 scripted 记录，`kind=scripted size=8 customers=40`）。**这个判断只对了一半** —— 那 4 条确实该剔，但真正让 multi 报表数字错得离谱的是另一回事：
+污染一度被归因为 `_prun.py` 的 glob 吞掉上一代 shard2of2 残留（4 条 scripted 记录，`kind=scripted size=8 customers=40`）。**这个判断只对了一半** —— 那 4 条确实该剔，但真正让 multi 报表数字错得离谱的是另一回事：
 
 **出报表时 sidecar 已经挂了，`_resume.py` 照常跑，每条 22 秒快速失败，写出一条 `tools=0 model_calls=3 action=none` 的记录，然后把它当成「已跑完」。**
 
