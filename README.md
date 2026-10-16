@@ -2,16 +2,40 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-237%20passed-brightgreen.svg)](#7-评测方法论)
+[![Tests](https://img.shields.io/badge/tests-263%20passed-brightgreen.svg)](#6-测试)
 [![Docker](https://img.shields.io/badge/docker-ready-blue.svg)](Docker部署.md)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://docs.astral.sh/ruff/)
 
-> 一个能经得起面试官追问 30 分钟的 Agent 项目：**LangGraph 编排 + 角色权限物理裁剪 + HITL 人工审批 + τ-bench 式终态评测**。
-> 评测不看 agent 说了什么，只看它做完之后**数据库状态对不对**；一致性用 `pass^k` 而不是单次成功率衡量。
+> **一个会自己发现「我做错了」的 Agent。**
+>
+> 它处置售后工单：查订单、判资格、退款 / 补发 / 赔付 / 关单，高风险动作必须人工点「批准」。
+> 每一次调用都落审计日志，每一轮处置都被拿去和**数据库终态**对账 —— 不是和它自己说的话对账。
+>
+> 项目里最值得看的不是架构图，是 **35 个真实缺陷的取证链**：
+> 每一个都是「代码看着能跑、读数看着正常，但护栏实际上没守住」。
+> 全部写在 [§4.2](#42-三十五个真实缺陷) —— 面试时讲这个比讲架构图有用。
 
-**关键取舍先说在前面**：本仓库的 golden 由规则引擎推导，所以规则基线在终态准确率上是**上界参考**，
-不是被 LLM 超越的对手。这一点在报表里显式标注为 `rule_ceiling`。要衡量模型能力得接真 LLM
-（`kind=llm`，需要 `OPENAI_API_KEY`）—— 详见 [§7 评测方法论](#7-评测方法论)。
+---
+
+## 一眼看它长什么样
+
+![网页控制台](docs/screenshots/console.png)
+
+左边是 42 张工单，中间是 agent 一步步调工具，右下是它给这个工单的结论。
+注意中间那栏里 `verifier` 的最后一段：
+
+```
+复核结论：{"passed":true,"diffs":[],"notes":"工单状态：resolved
+  订单：#None 订单状态：signed，退款次数：0 退款记录：无
+  结论：不通过 问题：工单已关闭为 resolved，但既无退款记录、订单也未取消
+  —— 属于只关单不办事 建议：请 resolver 复核上述问题后重新处置。"}
+```
+
+**这个 `verifier` 是独立的一票，它专门抓「活儿没干完但话说得漂亮」。**
+上面那条工单被它抓到后打回重做，最终走完 `mark_evidence_received → submit_after_sales_action → close_ticket` 三步，
+赔付 5.0 元（在 30 元权限上限内），工单 `resolved`。全过程 127ms，预算 ¥0.012859。
+
+这条链路就是本项目的全部主张：**agent 说得对不算对，数据库变对了才算对。**
 
 ---
 
@@ -20,7 +44,7 @@
 | 面试官的问题 | 本项目的答案 | 代码位置 |
 |---|---|---|
 | 能不能把 LLM 接到真实系统上？ | 工具幂等键 + 唯一约束兜底、写工具不自动重试、租户隔离、HITL 审批、token 预算熔断 | `tools/registry.py`、`graph/middleware.py` |
-| 你怎么知道它做对了？ | 不看输出，比终态。9 个只读工具 + 4 个写工具全部落审计日志，评测比对 DB 快照 | `eval/harness.py`、`db/snapshot.py` |
+| 你怎么知道它做对了？ | 不看输出，比终态。13 个工具全部落审计日志，评测比对 DB 快照 | `eval/harness.py`、`db/snapshot.py` |
 | 它稳不稳？贵不贵？ | `pass^k` 一致性 + 单任务成本 + 分层报表；两臂消融给出"多花的钱买到了什么" | `eval/report.py` |
 
 ### 实测指标
@@ -244,15 +268,15 @@ L3 的构造方式：seed 时让 70% 的 L3 工单**不关联订单**。
 > 七个端点档案怎么选、常见故障怎么查）——看 **[手动启动.md](手动启动.md)**。
 > 下面这一节是压缩版。
 
-```bash
-python -m venv .venv
-.venv\Scripts\activate                 # Windows
-# source .venv/bin/activate            # macOS / Linux
+**30 秒看到它转起来**（不写任何代码，不开任何终端之外的东西）：
 
+```bash
 pip install -e ".[dev]"
+ticket-agent serve --seed 60              # 起服务 + 灌 60 个客户的数据
+# 浏览器打开 http://127.0.0.1:8000/ ，点左边任意一张工单，按「▶ 处置该工单」
 ```
 
-### 2.1 跑一遍完整链路
+**命令行版完整链路**：
 
 ```bash
 # 1. 生成合成业务数据（60 客户 / 149 订单 / 35 工单，全部落在本地 SQLite）
@@ -3380,7 +3404,7 @@ ticket-agent/
 
 ```bash
 python -m pytest tests/ -q
-# 263 passed, 1 skipped
+# 263 passed, 1 skipped（另：test_defect33 / test_defect35 在 tests/ 之外单独收集时共 29 条）
 ```
 
 十三个测试文件，231 个测试，覆盖的都是**接线**而不是"智能"：
@@ -3389,6 +3413,10 @@ python -m pytest tests/ -q
 > `test_clarification_loop.py`（21 条，多轮澄清闭环）/
 > `test_evidence.py`（14 条，凭证与任务输入字段可达性）/> `test_pii.py`（25 条，脱敏）/> `test_policy_consistency.py`（13 条，政策文本与代码一致性）/> `test_three_rates.py`（6 条，三率指标）—— 合计 79 条。
 > **146 + 79 = 225**，与 `pytest --collect-only -q` 的实测一致。
+> 再加 `test_defect33.py`（3 条）+ `test_defect35.py`（26 条）= **254**；
+> `pytest --collect-only` 全仓实测 **264**（含 `test_p2e2e` 等体检脚本自身）。
+> ★ 引用测试数时以 `pytest --collect-only` 为准，不要手抄 —— 这个项目的测试数
+> 跟着缺陷数一起涨，手抄的那个一定过期。
 
 **`test_rules_consistency.py`（23 个）** —— 把上面那三个静默缺陷钉死。
 关键断言不是"函数返回什么"，而是**结构约束**：比如
