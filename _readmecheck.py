@@ -51,6 +51,7 @@ DOCS: dict[str, int] = {
     "手动启动.md": 200,
     "接哪个模型跑.md": 100,
     "web/index.html": 300,   # 控制台：单文件前端，压平了同样看不出来
+    "diagnostics/README.md": 30,   # 一次性排查脚本的目录说明：短，但同样怕被压平
 }
 
 
